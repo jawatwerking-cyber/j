@@ -1,0 +1,79 @@
+--[[
+    PS99 Bot Reporter
+    Auto-detects bot name from Roblox username.
+    Reports diamonds, coins, and server to your dashboard.
+    REQUIREMENTS: HttpService must be enabled
+    (Game Settings > Security > Allow HTTP Requests)
+--]]
+-- CONFIG
+local DASHBOARD_URL   = "https://bot-monitor-lua--jawatwerking.replit.app/api/bots/report"
+local API_KEY         = "0ff96a89559844b4637934c9672af592dd06b39d6e5b6dba"
+local REPORT_INTERVAL = 30  -- seconds between reports
+local HttpService = game:GetService("HttpService")
+local Players     = game:GetService("Players")
+local player      = Players.LocalPlayer
+local BOT_NAME = player.Name  -- auto-detected from Roblox account
+local function getGems()
+    local leaderstats = player:WaitForChild("leaderstats", 5)
+    if not leaderstats then
+        warn("[PS99 Tracker] No leaderstats found")
+        return 0
+    end
+    local diamonds = leaderstats:WaitForChild("Diamonds", 5)
+    return diamonds and diamonds.Value or 0
+end
+local function getCoins()
+    local leaderstats = player:FindFirstChild("leaderstats")
+    if not leaderstats then return nil end
+    local coins = leaderstats:FindFirstChild("Coins")
+        or leaderstats:FindFirstChild("Gold")
+        or leaderstats:FindFirstChild("Stars")
+    return coins and tonumber(coins.Value) or nil
+end
+local function getServerName()
+    local ok, info = pcall(function()
+        return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId)
+    end)
+    if ok and info and info.Name then
+        return info.Name
+    end
+    return "Place " .. tostring(game.PlaceId)
+end
+local function reportStats()
+    local diamonds  = getGems()
+    local coins     = getCoins()
+    local server    = getServerName()
+    local data = {
+        botName    = BOT_NAME,
+        diamonds   = diamonds,
+        serverName = server,
+    }
+    if coins then
+        data.coins = coins
+    end
+    local payload = HttpService:JSONEncode(data)
+    local success, result = pcall(function()
+        return HttpService:RequestAsync({
+            Url     = DASHBOARD_URL,
+            Method  = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json",
+                ["X-Api-Key"]    = API_KEY,
+            },
+            Body = payload,
+        })
+    end)
+    if success then
+        print(("[PS99] %s | Diamonds: %d | Coins: %s"):format(
+            BOT_NAME, diamonds, tostring(coins or "N/A")
+        ))
+    else
+        warn(("[PS99] Report failed: %s"):format(tostring(result)))
+    end
+end
+print(("[PS99] Started — %s, every %ds"):format(BOT_NAME, REPORT_INTERVAL))
+reportStats()
+while true do
+    task.wait(REPORT_INTERVAL)
+    reportStats()
+end
