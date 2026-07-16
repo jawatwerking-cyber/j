@@ -1,0 +1,104 @@
+--[[
+    PS99 Bot Reporter
+    ==================
+    Sends your bot's diamond stats to the monitoring dashboard.
+    Bot name is auto-detected from the Roblox account username.
+
+    SETUP:
+    1. Set DASHBOARD_URL to your deployed app URL + /api/bots/report
+    2. Set API_KEY to your secret key (keep this private!)
+    3. Drop this LocalScript into each bot's executor — done.
+
+    REQUIREMENTS:
+    - HttpService must be enabled:
+      Game Settings > Security > Allow HTTP Requests
+--]]
+
+-- ============================================================
+-- CONFIGURATION  (edit these two values only)
+-- ============================================================
+local DASHBOARD_URL   = "https://bot-monitor-lua--jawatwerking.replit.app/api/bots/report"
+local API_KEY         = "0ff96a89559844b4637934c9672af592dd06b39d6e5b6dba"
+local REPORT_INTERVAL = 30   -- seconds between reports
+-- ============================================================
+
+local HttpService = game:GetService("HttpService")
+local Players     = game:GetService("Players")
+
+-- Auto-detect: use the Roblox account's actual username
+local player  = Players.LocalPlayer
+local BOT_NAME = player.Name   -- e.g. "MyFarmAlt1"
+
+-- -------------------------------------------------------
+-- Helper: read diamonds from leaderstats
+-- Tries several common stat names used in PS99
+-- -------------------------------------------------------
+local function getDiamonds()
+    local leaderstats = player:FindFirstChild("leaderstats")
+    if not leaderstats then return 0 end
+
+    for _, statName in ipairs({ "Diamonds", "Diamond", "Gems", "Currency" }) do
+        local stat = leaderstats:FindFirstChild(statName)
+        if stat then
+            return tonumber(stat.Value) or 0
+        end
+    end
+    return 0
+end
+
+-- -------------------------------------------------------
+-- Helper: get the place/server name
+-- -------------------------------------------------------
+local function getServerName()
+    local ok, info = pcall(function()
+        return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId)
+    end)
+    if ok and info and info.Name then
+        return info.Name
+    end
+    return "Place " .. tostring(game.PlaceId)
+end
+
+-- -------------------------------------------------------
+-- Send one report
+-- -------------------------------------------------------
+local function reportStats()
+    local diamonds  = getDiamonds()
+    local server    = getServerName()
+
+    local payload = HttpService:JSONEncode({
+        botName    = BOT_NAME,
+        diamonds   = diamonds,
+        serverName = server,
+    })
+
+    local success, result = pcall(function()
+        return HttpService:RequestAsync({
+            Url     = DASHBOARD_URL,
+            Method  = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json",
+                ["X-Api-Key"]    = API_KEY,
+            },
+            Body = payload,
+        })
+    end)
+
+    if success then
+        print(("[PS99 Reporter] %s reported %d diamonds"):format(BOT_NAME, diamonds))
+    else
+        warn(("[PS99 Reporter] Failed: %s"):format(tostring(result)))
+    end
+end
+
+-- -------------------------------------------------------
+-- Main loop
+-- -------------------------------------------------------
+print(("[PS99 Reporter] Started for account: %s  (every %ds)"):format(BOT_NAME, REPORT_INTERVAL))
+
+reportStats()  -- report immediately on join
+
+while true do
+    task.wait(REPORT_INTERVAL)
+    reportStats()
+end
